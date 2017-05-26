@@ -35,7 +35,7 @@ def corr_plot( inp_df, exclude = None, focus = None, ordered=True ):
 
     df     = inp_df[col_list].copy()    
     
-    corr   = df.corr()
+    corr   = df.corr( method='spearman' )
     corr_v = corr.as_matrix()
     
     # Mask the upper right so it can't be seen
