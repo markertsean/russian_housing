@@ -51,6 +51,43 @@ def normalize_column_sigma( inp_df, column, lower_bound=True, upper_bound=True, 
         
     return normalize_column( inp_df, column, minVal=new_column.min(), maxVal=new_column.max())
 
+# Normalize index
+def scale_column( inp_df, column, maxVal=None, minVal=None ):
+    
+    new_column = inp_df.copy()
+    
+    max_value = maxVal
+    min_value = minVal
+    
+    if( max_value == None ):
+        max_value = inp_df[column].max()
+    if( min_value == None ):
+        min_value = inp_df[column].min()
+        
+    new_column[column] = ( inp_df[ column ] - float(min_value) ) / ( max_value - min_value )
+    new_column.ix[ new_column[column]<0, column ] = 0.0
+    new_column.ix[ new_column[column]>1, column ] = 1.0
+
+    new_column[column] = 2*new_column[column]-1.
+    
+    
+    return ( new_column[column] - new_column[column].mean() ) / new_column[column].std()
+
+# Find z scale values within input sigma, returns normalization parameters that ignores outliers
+def scale_column_sigma( inp_df, column, lower_bound=True, upper_bound=True, n_sigma=3.0 ):
+    
+    new_column = inp_df[column].copy()
+    
+    myMean = new_column.mean()
+    myStd  = new_column.std()
+    
+    if ( lower_bound ):
+        new_column =  new_column[ new_column > ( myMean - n_sigma * myStd ) ]
+        
+    if ( upper_bound ):
+        new_column =  new_column[ new_column < ( myMean + n_sigma * myStd ) ]
+        
+    return scale_column( inp_df, column, minVal=new_column.min(), maxVal=new_column.max())
 
 # Generate PCA, and return relevant columns
 def generate_reduced_PCA( inp_df             , # Dataframe to play with
@@ -92,9 +129,9 @@ def generate_reduced_PCA( inp_df             , # Dataframe to play with
     if ( normalize or sigma_normalize ):
         for col in foo.columns.values:
             if ( normalize ):
-                foo[col] = normalize_column      ( foo, col, maxVal, minVal )
+                foo[col] = scale_column      ( foo, col, maxVal, minVal )
             else:
-                foo[col] = normalize_column_sigma( foo, col, lower_bound, upper_bound, n_sigma )
+                foo[col] = scale_column_sigma( foo, col, lower_bound, upper_bound, n_sigma )
         
     
     # Generate column names for returning series
@@ -168,7 +205,6 @@ def binary_classification( inp_df, ignore=None, lowerLim=2, upperLim=20 ):
             
     # Consider each column
     for col in col_list:
-
         options = sorted(bar[col].unique()) # Possible options
 
         # Only reformat the classification columns
@@ -177,9 +213,8 @@ def binary_classification( inp_df, ignore=None, lowerLim=2, upperLim=20 ):
             iterator = 0
             # Create new binary clssifier for each class column
             for item in bar[col].unique():
-
+                
                 new_col = col+'_'+str( item )
-
                 bar[new_col] = 0
                 bar.ix[ bar[col]==item, [new_col] ] = 1
 
