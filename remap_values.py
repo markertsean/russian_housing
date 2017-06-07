@@ -1,6 +1,9 @@
 import numpy  as np
 import pandas as pd
 
+import matplotlib.pyplot as plt
+import matplotlib.mlab   as mlab
+
 from sklearn.utils import shuffle
 from sklearn.model_selection import KFold
 from sklearn.metrics import r2_score
@@ -88,6 +91,110 @@ def scale_column_sigma( inp_df, column, lower_bound=True, upper_bound=True, n_si
         new_column =  new_column[ new_column < ( myMean + n_sigma * myStd ) ]
         
     return scale_column( inp_df, column, minVal=new_column.min(), maxVal=new_column.max())
+
+
+
+
+# Find z scale, shifting the distribution to zscale the underlying gaussian distribution, and ignore outliers
+def smart_scale( inp_df              ,  # Data frame
+                 column              ,  # Column of interest
+                 lower_bound = True  ,  # Whether to trim lower boundary
+                 upper_bound = True  ,  # Whether to trim upper boundary
+                 n_sigma     =   2.0 ,  # Number of stds to use for trimming
+                 tolerance   =   0.1 ,  # Tolerance for measuring convergence
+                 max_steps   =  20   ,  # Maximum number of iterations
+                 max_sigma   =   3.0 ,  # When done, number of stds to cut when calculating new distribution
+                 show_plot   = True  ): # Whether to show plots
+
+    converged  = False  # Whether the series has converged
+    counter    = 0      # Tracks so doesn't loop infinitely
+
+    old_mean   = inp_df[column].mean() # Starting mean and standard deviation
+    old_std    = inp_df[column].std ()
+
+    new_column = inp_df[column].copy() # Make copy of df column
+
+    low_lim    = new_column.min()      # For plotting
+    hi_lim     = new_column.max()
+    
+    
+    # Iterate until we converge
+    while ( not converged and counter < max_steps ):
+
+
+        counter = counter + 1
+
+        # Trim column based on data points within standard deviation
+        if ( lower_bound ):
+            new_column =  new_column.ix[ new_column > ( old_mean - n_sigma * old_std ) ]
+        
+        if ( upper_bound ):
+            new_column =  new_column.ix[ new_column < ( old_mean + n_sigma * old_std ) ]
+            
+        # Calculate new mean
+        myMean = new_column.mean()
+        myStd  = new_column.std()
+            
+        # If both mean and standard deviation not changing
+        if ( abs( myMean/old_mean - 1.0 ) < tolerance and
+             abs( myStd /old_std  - 1.0 ) < tolerance ):
+            converged = True
+
+        # Hold on to old means, for next iteration
+        old_mean  = myMean
+        old_std   = myStd
+
+        # Plot the change
+        if ( show_plot ):
+            new_column.hist( bins=np.arange(low_lim, hi_lim, (hi_lim-low_lim)/20), normed=True )
+            x = np.linspace( low_lim, hi_lim, 500 )
+            plt.plot(x,mlab.normpdf(x, myMean, myStd))
+            plt.xlim( low_lim, hi_lim )
+            plt.title( 'Mean: %7.2f Std: %7.2f' % (new_column.mean(), new_column.std()) )
+            plt.show()
+
+            
+    # If we failed to converge, abort
+    if ( counter == max_steps ):
+        print 'Z-scale failed to converge'
+        return
+    
+    
+    # Restart with original, trim off edges outside maximum sigma extent
+    new_column = inp_df[column].copy()
+    
+    if ( lower_bound ):
+        new_column =  new_column.ix[ new_column > ( myMean - max_sigma * myStd ) ]
+    if ( upper_bound ):
+        new_column =  new_column.ix[ new_column < ( myMean + max_sigma * myStd ) ]
+    
+    
+    # Generate mean and std for points within the distribution
+    gauss_mean = new_column.mean()
+    gauss_std  = new_column.std()
+    
+    
+    # Z-scale the distribution using the recovered gaussian mean and standard deviation
+    new_column = inp_df[column].copy()
+    new_column = (new_column - gauss_mean) / gauss_std
+    
+    
+    # Plot the last thing
+    if ( show_plot ):
+        low_lim = -7
+        hi_lim  =  7
+        new_column.hist(bins=np.arange(low_lim, hi_lim, 0.5))#bins=10)
+        x = np.linspace( low_lim, hi_lim, 500 )
+        plt.plot(x,mlab.normpdf(x, 0, 1)*500)#200000)
+        plt.xlim( low_lim, hi_lim )
+        plt.title( 'Final: Mean: %7.2f Std: %7.2f' % (gauss_mean, gauss_std) )
+        plt.show()
+
+    return new_column
+
+
+
+
 
 # Generate PCA, and return relevant columns
 def generate_reduced_PCA( inp_df             , # Dataframe to play with
